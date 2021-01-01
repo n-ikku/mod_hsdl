@@ -1,0 +1,133 @@
+<?php
+	/* データベース接続用 - 環境に応じて修正してください - */
+	define ("hsdl_dbTbl","hstest1"); // テーブル名
+	define ("hsdl_dbNm","mysql:host=localhost;dbname=hstest1"); // 接続文字列
+	define ("hsdl_dbUsr",""); // MariaDB User
+	define ("hsdl_dbPwd",""); // MariaDB Password
+	define ("hsdl_uri","https://xxx.xxx.xxx/"); // サイトURL
+
+	function make_tbl_del($arr) {
+		$body = <<< EOT
+<form method="post" action="{$_SERVER['PHP_SELF']}">
+<input type='hidden' name='ld' value='1'>
+<input type='hidden' name='dels[]' value='{$arr[0]},{$arr[1]},{$arr[2]}'>
+<input type='submit' value='削除'>
+</form>
+EOT;
+		return $body;
+	}
+	
+	function make_tbl_td($arr) {
+		$body = "<tr>";
+		foreach($arr as $str){
+			$body.="<td>".$str."</td>";
+		}
+		$body .= "</tr>";
+		return $body;
+	}
+
+	function make_tbl_th($arr) {
+		$body = "<tr>";
+		foreach($arr as $str){
+			$body.="<th>".$str."</th>";
+		}
+		$body .= "</tr>";
+		return $body;
+	}
+
+	function check_ext($str) {
+		$method="text/plain";
+		switch(strtolower($str)){
+			case 'jpeg':
+			case 'jpg':  $method="image/jpeg"; break;
+			case 'gif':  $method="image/gif";  break;
+			case 'png':  $method="image/png";  break;
+			case 'mp4':  $method="video/mp4";  break;
+			case 'mp3':  $method="audio/mp3";  break;
+		}
+		return $method;
+	}
+
+	// File delete
+	function file_del($arr){
+		$db = new PDO(hsdl_dbNm, hsdl_dbUsr, hsdl_dbPwd);
+		foreach($arr as $str) {
+			list($s,$c,$l) = explode(",",$str);
+			$sql = "delete from ".hsdl_dbTbl." where s=? and c=? and l=?";
+			$stmt = $db->prepare($sql);
+			$stmt->bindParam(1,$s);
+			$stmt->bindParam(2,$c);
+			$stmt->bindParam(3,$l);
+			$stmt->execute();
+		}
+		error_log($s."/".$c."/".$l);
+		$stmt = null;
+		$db = null;
+	}
+
+	// File Upload (Multi file support)
+	function file_up_load($param = "sendfile", $method = "", $comment = ""){
+		$count = 0;
+		$err = array();
+		if(count($_FILES[$param])>0){
+			for($i=0; $i<count($_FILES[$param]["name"]); $i++) {
+				if(strlen($_FILES[$param]["name"][$i]) == 0) {
+					continue;
+				}
+				try{
+					$db = new PDO(hsdl_dbNm, hsdl_dbUsr, hsdl_dbPwd);
+					if(strlen($_SESSION['prefix']) > 0){
+						$fn = $_SESSION['prefix']."-".$_FILES[$param]["name"][$i];
+					} else {
+						$fn = $_FILES[$param]["name"][$i];
+					}
+					$fn = str_replace(array("/","'","\\",'"'),"",$fn);
+					$ext = substr($fn, strrpos($fn, '.') + 1);
+					$sv_file = $_FILES[$param]["tmp_name"][$i];
+					$sv_size = $_FILES[$param]["size"][$i];
+					$fr = fopen($sv_file,"rb");
+					if($method == ""){
+						$method = check_ext($ext);
+					}
+
+					$sql = "select k from ".hsdl_dbTbl." where k=?";
+					$stmt = $db->prepare($sql);
+					$stmt->bindParam(1,$fn);
+					$stmt->execute();
+					$red = $stmt->fetchAll();
+					if(count($red) == 0) {
+						$sql = "insert into ".hsdl_dbTbl."(k,m,v,c,l,n) values(?,?,?,now(),?,?)";
+						$stmt = $db->prepare($sql);
+						$stmt->bindParam(1,$fn);
+						$stmt->bindParam(2,$method);
+						$stmt->bindParam(3,$fr,PDO::PARAM_LOB);
+						$stmt->bindParam(4,$sv_size);
+						$stmt->bindParam(5,$comment);
+						$stmt->execute();
+						$count ++;
+					} else {
+						$sql = "update ".hsdl_dbTbl." set m=?,v=?,c=now(),l=?,n=? where k=?";
+
+						$stmt = $db->prepare($sql);
+						$stmt->bindParam(1,$method);
+						$stmt->bindParam(2,$fr,PDO::PARAM_LOB);
+						$stmt->bindParam(3,$sv_size);
+						$stmt->bindParam(4,$comment);
+						$stmt->bindParam(5,$fn);
+						$stmt->execute();
+						$count ++;
+					}
+
+				}catch(Exception $e){
+					error_log("exception:".$e);
+					// $err[] = array($_FILES[$param]["name"][$i],$e);
+				}
+			}
+		}
+		// return array($count,$err);
+	}
+	
+	function writeline($str) {
+		echo $str."<br>";
+	}
+?>
